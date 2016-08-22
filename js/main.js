@@ -13,9 +13,13 @@ var audio2 = document.querySelector('audio#audio2');
 var callButton = document.querySelector('button#callButton');
 var hangupButton = document.querySelector('button#hangupButton');
 var codecSelector = document.querySelector('select#codec');
+var callstats = new callstats(null,io,jsSHA);
+
 hangupButton.disabled = true;
 callButton.onclick = call;
 hangupButton.onclick = hangup;
+
+callstats.initialize(842748708, "CuXT/0zOOd9R:7TL8LgESzRqEDTZcIMh6IWta+qdhKe5wkLciF5yTQNw=", "testID");
 
 var pc1;
 var pc2;
@@ -50,7 +54,7 @@ function gotStream(stream) {
     offerOptions
   ).then(
     gotDescription1,
-    onCreateSessionDescriptionError
+    onCreateSessionDescriptionError(pc1, "createOffer")
   );
 
   bitrateSeries = new TimelineDataSeries();
@@ -62,8 +66,11 @@ function gotStream(stream) {
   packetGraph.updateEndDate();
 }
 
-function onCreateSessionDescriptionError(error) {
-  trace('Failed to create session description: ' + error.toString());
+function onCreateSessionDescriptionError(pc, action) {
+  return function(error) {
+    callstats.reportError(pc, "test", action, error)
+    trace('Failed to create session description: ' + error.toString());
+  }
 }
 
 function call() {
@@ -81,6 +88,10 @@ function call() {
   trace('Created remote peer connection object pc2');
   pc2.onicecandidate = iceCallback2;
   pc2.onaddstream = gotRemoteStream;
+
+  callstats.addNewFabric(pc1, "testID1", "audio", "test");
+  callstats.addNewFabric(pc2, "testID2", "audio", "test");
+
   trace('Requesting local stream');
   navigator.mediaDevices.getUserMedia({
     audio: true,
@@ -88,6 +99,7 @@ function call() {
   })
   .then(gotStream)
   .catch(function(e) {
+    callstats.reportError(pc1, "test", "getUserMedia", e)
     alert('getUserMedia() error: ' + e.name);
   });
 }
@@ -101,13 +113,13 @@ function gotDescription1(desc) {
         function() {
           pc2.createAnswer().then(
             gotDescription2,
-            onCreateSessionDescriptionError
+            onCreateSessionDescriptionError(pc2, "createAnswer")
           );
         },
-        onSetSessionDescriptionError
+        onSetSessionDescriptionError(pc2, "setRemoteDescription")
       );
     },
-    onSetSessionDescriptionError
+    onSetSessionDescriptionError(pc1, "setLocalDescription")
   );
 }
 
@@ -119,10 +131,10 @@ function gotDescription2(desc) {
       pc1.setRemoteDescription(desc).then(
         function() {
         },
-        onSetSessionDescriptionError
+        onSetSessionDescriptionError(pc1, "setRemoteDescription")
       );
     },
-    onSetSessionDescriptionError
+    onSetSessionDescriptionError(pc2, "setLocalDescription")
   );
 }
 
@@ -151,7 +163,7 @@ function iceCallback1(event) {
       new RTCIceCandidate(event.candidate)
     ).then(
       onAddIceCandidateSuccess,
-      onAddIceCandidateError
+      onAddIceCandidateError(pc2)
     );
     trace('Local ICE candidate: \n' + event.candidate.candidate);
   }
@@ -163,9 +175,16 @@ function iceCallback2(event) {
       new RTCIceCandidate(event.candidate)
     ).then(
       onAddIceCandidateSuccess,
-      onAddIceCandidateError
+      onAddIceCandidateError(pc1)
     );
     trace('Remote ICE candidate: \n ' + event.candidate.candidate);
+  }
+}
+
+function onCreateSessionDescriptionError(pc, action) {
+  return function(error) {
+    callstats.reportError(pc, "test", action, error)
+    trace('Failed to create session description: ' + error.toString());
   }
 }
 
@@ -173,12 +192,18 @@ function onAddIceCandidateSuccess() {
   trace('AddIceCandidate success.');
 }
 
-function onAddIceCandidateError(error) {
-  trace('Failed to add ICE Candidate: ' + error.toString());
+function onAddIceCandidateError(pc) {
+  return function(error) {
+    callstats.reportError(pc, "test", "addIceCandidate", error)
+    trace('Failed to add ICE Candidate: ' + error.toString());
+  }
 }
 
-function onSetSessionDescriptionError(error) {
-  trace('Failed to set session description: ' + error.toString());
+function onSetSessionDescriptionError(pc, action) {
+  return function(error) {
+    callstats.reportError(pc, "test", action, error)
+    trace('Failed to set session description: ' + error.toString());
+  }
 }
 
 function forceChosenAudioCodec(sdp) {
